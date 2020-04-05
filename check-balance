@@ -1,0 +1,50 @@
+:local threshold 100
+:local to 
+:local from
+:local subject
+:local smtpServer
+:local smtpPort 25
+
+:local answer
+:local encodedBalance
+:local decodedBalance ""
+:local startToken "CUSD: 0,\""
+:local endToken "\","
+:local startPos
+:local endPos
+:local maxTry 15;
+:local tryCount 0;
+
+:do {
+	:set answer [/interface lte at-chat lte1 input="AT+CUSD=1,\"*923#\",15" wait=yes as-value]
+	:set answer [:pick $answer 0]
+	:set tryCount ($tryCount+1)
+} while=(!($answer~$startToken) and ($tryCount<=$maxTry))
+
+:if ($tryCount>=$maxTry) do={
+	[:log warning "check balance: no reply from Megaphon"]
+	/tool e-mail send server=$smtpServer port=$smtpPort from=$from body="no reply from Megaphon, may be it is no money" start-tls=no subject=$subject to=$to
+	:error "no reply from Megaphon"}
+
+:set startPos [:find $answer $startToken -1]
+:set startPos ($startPos+9)
+:set endPos [:find $answer $endToken $startPos]
+:set encodedBalance [:pick $answer $startPos $endPos]
+:set $startPos 28
+:set $endPos 32
+
+:local currentSymbol [:pick $encodedBalance $startPos $endPos]
+
+:while (!($currentSymbol="002e")) do={
+	:if ($currentSymbol="002d") do={
+    	:set decodedBalance ($decodedBalance . "-")} else={
+        	:set decodedBalance ($decodedBalance . [:tostr ([:tonum $currentSymbol]-30)])}
+	:set startPos ($startPos+4)
+	:set endPos ($endPos+4)
+	:set $currentSymbol [:pick $encodedBalance $startPos $endPos]}
+
+:set decodedBalance [:tonum $decodedBalance]
+
+:if ($decodedBalance<=$threshold) do={
+	/tool e-mail send server=$smtpServer port=$smtpPort from=$from body="Balance $decodedBalance rub." start-tls=no subject=$subject to=$to
+	:log warning "check balance: $decodedBalance"} else={:log info "check balance: $decodedBalance"}
